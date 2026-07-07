@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>多计划艾宾浩斯学习助手</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#4A6CF7',
+            success: '#00B42A',
+            warning: '#FF7D00',
+            lightBlue: '#E8F3FF',
+            lightGreen: '#E9FFF2',
+            lightPurple: '#F3EFFF',
+          }
+        }
+      }
+    }
+  </script>
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .card-shadow { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+      .progress-bar { height: 8px; border-radius: 4px; background: #E5E6EB; }
+      .progress-fill { height: 8px; border-radius: 4px; background: #4A6CF7; }
+      .day-card { transition: transform 0.2s ease; }
+      .day-card:hover { transform: scale(1.02); }
+    }
+  </style>
+</head>
+<body class="bg-gray-50 font-sans text-gray-800">
+  <!-- 顶部导航 -->
+  <header class="bg-white shadow-sm sticky top-0 z-10">
+    <div class="container mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-2">
+      <h1 class="text-lg font-bold text-primary flex items-center">
+        <i class="fa fa-book mr-2"></i>多计划艾宾浩斯学习助手
+      </h1>
+      <div class="flex items-center gap-3">
+        <select id="plan-selector" class="px-2 py-1 border border-gray-300 rounded-md text-sm">
+          <option value="new">新建计划</option>
+        </select>
+        <button id="save-plan" class="text-sm text-primary flex items-center">
+          <i class="fa fa-save mr-1"></i>保存当前计划
+        </button>
+        <button id="delete-plan" class="text-sm text-red-500 flex items-center">
+          <i class="fa fa-trash mr-1"></i>删除当前计划
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container mx-auto px-4 py-6 max-w-5xl">
+    <!-- 计划配置区 -->
+    <section class="bg-white rounded-lg p-5 card-shadow mb-6">
+      <div class="mb-4">
+        <label class="block text-sm text-gray-600 mb-1">计划名称</label>
+        <input type="text" id="plan-name" value="我的学习计划"
+               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary">
+      </div>
+      
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">学习总量</label>
+          <input type="number" id="total-units" value="23" min="1"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary">
+          <p class="text-xs text-gray-500 mt-1">总学习单元数（支持超30天）</p>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">开始日期</label>
+          <input type="date" id="start-date" value="2026-07-06"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary">
+        </div>
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">单元命名方式</label>
+          <select id="unit-naming" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary">
+            <option value="number">按顺序1/2/3…</option>
+            <option value="custom">自定义单元名（仅需填写新学单元）</option>
+          </select>
+        </div>
+      </div>
+      
+      <!-- 每日学习量配置（超30天） -->
+      <div class="mb-4">
+        <label class="block text-sm text-gray-600 mb-2">每日学习量配置（可调整每天新学数量）</label>
+        <div id="daily-units-container" class="space-y-2 max-h-60 overflow-y-auto pr-2">
+          <!-- 初始生成40天 -->
+        </div>
+        <div class="flex justify-between mt-2">
+          <button id="add-day" class="text-sm text-primary flex items-center">
+            <i class="fa fa-plus-circle mr-1"></i>增加1天
+          </button>
+          <button id="batch-add" class="text-sm text-primary flex items-center">
+            <i class="fa fa-plus-square mr-1"></i>批量加10天
+          </button>
+        </div>
+      </div>
+      
+      <!-- 自定义单元名区域（仅需填写新学单元） -->
+      <div id="custom-unit-area" class="hidden mb-4">
+        <label class="block text-sm text-gray-600 mb-2">自定义新学单元名（每行1个单元，填写${document.getElementById('total-units').value || 23}个即可）</label>
+        <textarea id="custom-unit-names" rows="5" placeholder="例如：
+Unit1-单词
+Unit2-语法
+Unit3-阅读
+（仅需填写新学的单元，复习单元自动复用）"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary"></textarea>
+        <p class="text-xs text-gray-500 mt-1">提示：只需填写与“学习总量”数量一致的单元名，复习时会自动使用这些名称</p>
+      </div>
+      
+      <button id="generate-plan" class="w-full bg-primary text-white py-3 rounded-md font-medium flex items-center justify-center text-base">
+        <i class="fa fa-star mr-2"></i>生成超长周期学习+复习计划
+      </button>
+    </section>
+
+    <!-- 进度条 -->
+    <section class="mb-6">
+      <div class="flex justify-between text-sm mb-1">
+        <span id="plan-name-display">我的学习计划</span>
+        <span id="progress-percent">0%</span>
+      </div>
+      <div class="progress-bar w-full">
+        <div id="progress-fill" class="progress-fill w-0"></div>
+      </div>
+    </section>
+
+    <!-- 计划标题 -->
+    <section class="mb-4 text-center">
+      <h2 class="text-xl font-bold" id="plan-title">我的学习计划</h2>
+      <p class="text-gray-600">共 <span id="plan-days-display">40</span> 天周期</p>
+    </section>
+
+    <!-- 数据卡片区 -->
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div class="bg-lightBlue rounded-xl p-4 text-center card-shadow">
+        <p class="text-sm text-gray-600">总学习量</p>
+        <p class="text-2xl font-bold text-primary" id="stat-total">23</p>
+        <p class="text-xs text-gray-500">个单元</p>
+      </div>
+      <div class="bg-lightGreen rounded-xl p-4 text-center card-shadow">
+        <p class="text-sm text-gray-600">连续打卡</p>
+        <p class="text-2xl font-bold text-success" id="stat-streak">0</p>
+        <p class="text-xs text-gray-500">天</p>
+      </div>
+      <div class="bg-lightPurple rounded-xl p-4 text-center card-shadow">
+        <p class="text-sm text-gray-600">完成率</p>
+        <p class="text-2xl font-bold text-purple-600" id="stat-progress">0%</p>
+        <p class="text-xs text-gray-500" id="stat-progress-desc">0/23</p>
+      </div>
+    </section>
+
+    <!-- 操作按钮区 -->
+    <section class="flex flex-wrap gap-3 mb-6">
+      <button id="reset-plan" class="px-4 py-2 bg-warning text-white rounded-md text-sm flex items-center">
+        <i class="fa fa-refresh mr-1"></i>重新规划当前计划
+      </button>
+      <button id="export-csv" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md text-sm flex items-center">
+        <i class="fa fa-file-excel-o mr-1"></i>导出CSV
+      </button>
+      <button id="export-pdf" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md text-sm flex items-center">
+        <i class="fa fa-file-pdf-o mr-1"></i>导出PDF
+      </button>
+      <button id="export-calendar" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md text-sm flex items-center">
+        <i class="fa fa-calendar mr-1"></i>导入日历
+      </button>
+    </section>
+
+    <!-- 日历式规划表 -->
+    <section class="overflow-x-auto">
+      <div class="grid grid-cols-1 md:grid-cols-7 gap-3 min-w-[700px]">
+        <!-- 星期标题 -->
+        <div class="text-center text-sm font-medium text-gray-600 py-2">日</div>
+        <div class="text-center text-sm font-medium text-gray-600 py-2">一</div>
+        <div class="text-center text-sm font-medium text-gray-600 py-2">二</div>
+        <div class="text-center text-sm font-medium text-gray-600 py-2">三</div>
+        <div class="text-center text-sm font-medium text-gray-600 py-2">四</div>
+        <div class="text-center text-sm font-medium text-gray-600 py-2">五</div>
+        <div class="text-center text-sm font-medium text-gray-600 py-2">六</div>
+
+        <!-- 日历卡片容器 -->
+        <div id="calendar-container" class="col-span-full md:col-span-7 grid grid-cols-1 md:grid-cols-7 gap-3">
+          <div class="col-span-full text-center py-8 text-gray-500">
+            点击"生成超长周期学习+复习计划"按钮创建计划
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // 艾宾浩斯复习间隔（扩展到60天）
+    const EBBINGHAUS_INTERVALS = [1, 2, 4, 7, 15, 30, 60];
+
+    class MultiPlanEbbinghaus {
+      constructor() {
+        this.allPlans = this.loadAllPlans();
+        this.currentPlanId = null;
+        this.currentPlan = {
+          name: "我的学习计划",
+          totalUnits: 23,
+          startDate: "2026-07-06",
+          unitNaming: "number",
+          customUnitNames: "",
+          dailyUnits: [],
+          planData: [],
+          completedUnits: new Set()
+        };
+        this.initElements();
+        this.initEventListeners();
+        this.initDefaultDailyUnits(40); // 初始40天
+        this.updatePlanSelector();
+        this.updatePlanInfo();
+      }
+
+      // 加载所有保存的计划
+      loadAllPlans() {
+        const saved = localStorage.getItem('multiEbbinghausPlans');
+        return saved ? JSON.parse(saved) : {};
+      }
+
+      // 保存所有计划
+      saveAllPlans() {
+        localStorage.setItem('multiEbbinghausPlans', JSON.stringify(this.allPlans));
+      }
+
+      // 初始化DOM元素
+      initElements() {
+        this.el = {
+          planSelector: document.getElementById('plan-selector'),
+          savePlanBtn: document.getElementById('save-plan'),
+          deletePlanBtn: document.getElementById('delete-plan'),
+          planName: document.getElementById('plan-name'),
+          totalUnits: document.getElementById('total-units'),
+          startDate: document.getElementById('start-date'),
+          unitNaming: document.getElementById('unit-naming'),
+          customUnitArea: document.getElementById('custom-unit-area'),
+          customUnitNames: document.getElementById('custom-unit-names'),
+          dailyUnitsContainer: document.getElementById('daily-units-container'),
+          addDayBtn: document.getElementById('add-day'),
+          batchAddBtn: document.getElementById('batch-add'),
+          generateBtn: document.getElementById('generate-plan'),
+          resetBtn: document.getElementById('reset-plan'),
+          exportCsvBtn: document.getElementById('export-csv'),
+          exportPdfBtn: document.getElementById('export-pdf'),
+          exportCalendarBtn: document.getElementById('export-calendar'),
+          calendarContainer: document.getElementById('calendar-container'),
+          statTotal: document.getElementById('stat-total'),
+          statStreak: document.getElementById('stat-streak'),
+          statProgress: document.getElementById('stat-progress'),
+          statProgressDesc: document.getElementById('stat-progress-desc'),
+          progressFill: document.getElementById('progress-fill'),
+          progressPercent: document.getElementById('progress-percent'),
+          planTitle: document.getElementById('plan-title'),
+          planNameDisplay: document.getElementById('plan-name-display'),
+          planDaysDisplay: document.getElementById('plan-days-display')
+        };
+      }
+
+      // 初始化事件监听
+      initEventListeners() {
+        // 计划选择器
+        this.el.planSelector.addEventListener('change', (e) => this.loadSelectedPlan(e.target.value));
+        this.el.savePlanBtn.addEventListener('click', () => this.saveCurrentPlan());
+        this.el.deletePlanBtn.addEventListener('click', () => this.deleteCurrentPlan());
+        
+        // 配置项
+        this.el.unitNaming.addEventListener('change', () => {
+          this.toggleCustomUnitArea();
+          this.updateCustomUnitTip();
+        });
+        this.el.planName.addEventListener('input', () => this.updatePlanInfo());
+        this.el.totalUnits.addEventListener('input', () => {
+          this.updatePlanInfo();
+          this.updateCustomUnitTip();
+        });
+        this.el.addDayBtn.addEventListener('click', () => this.addDay());
+        this.el.batchAddBtn.addEventListener('click', () => this.batchAddDays(10));
+        this.el.generateBtn.addEventListener('click', () => this.generatePlan());
+        this.el.resetBtn.addEventListener('click', () => this.resetCurrentPlan());
+        this.el.exportCsvBtn.addEventListener('click', () => this.exportCSV());
+        this.el.exportPdfBtn.addEventListener('click', () => this.exportPDF());
+        this.el.exportCalendarBtn.addEventListener('click', () => this.exportCalendar());
+      }
+
+      // 更新自定义单元名提示
+      updateCustomUnitTip() {
+        const total = this.el.totalUnits.value || 23;
+        if (this.el.unitNaming.value === 'custom') {
+          this.el.customUnitArea.querySelector('label').textContent = `自定义新学单元名（每行1个单元，填写${total}个即可）`;
+        }
+      }
+
+      // 初始化每日学习量（40天）
+      initDefaultDailyUnits(count) {
+        this.el.dailyUnitsContainer.innerHTML = '';
+        this.currentPlan.dailyUnits = [];
+        for (let i = 1; i <= count; i++) {
+          this.addDayItem(i, 2);
+          this.currentPlan.dailyUnits.push(2);
+        }
+        this.updatePlanInfo();
+      }
+
+      // 添加单日学习量配置
+      addDayItem(dayNum, value) {
+        const div = document.createElement('div');
+        div.className = 'daily-unit-item flex items-center gap-2';
+        div.innerHTML = `
+          <span class="text-sm w-16">第${dayNum}天</span>
+          <input type="number" class="daily-unit-input flex-1 px-3 py-1.5 border border-gray-300 rounded-md" 
+                 value="${value}" min="1" data-day="${dayNum - 1}">
+          <span class="text-sm text-gray-500">个单元</span>
+        `;
+        this.el.dailyUnitsContainer.appendChild(div);
+        
+        // 监听输入变化
+        div.querySelector('.daily-unit-input').addEventListener('input', (e) => {
+          const idx = parseInt(e.target.dataset.day);
+          this.currentPlan.dailyUnits[idx] = parseInt(e.target.value) || 1;
+        });
+      }
+
+      // 增加1天
+      addDay() {
+        const dayCount = this.el.dailyUnitsContainer.children.length + 1;
+        this.addDayItem(dayCount, 2);
+        this.currentPlan.dailyUnits.push(2);
+        this.updatePlanInfo();
+      }
+
+      // 批量增加天数
+      batchAddDays(count) {
+        const currentCount = this.el.dailyUnitsContainer.children.length;
+        for (let i = 1; i <= count; i++) {
+          this.addDayItem(currentCount + i, 2);
+          this.currentPlan.dailyUnits.push(2);
+        }
+        this.updatePlanInfo();
+      }
+
+      // 切换自定义单元名区域
+      toggleCustomUnitArea() {
+        this.el.customUnitArea.classList.toggle('hidden', this.el.unitNaming.value !== 'custom');
+        this.currentPlan.unitNaming = this.el.unitNaming.value;
+      }
+
+      // 更新计划信息显示
+      updatePlanInfo() {
+        const planName = this.el.planName.value || "我的学习计划";
+        const totalUnits = parseInt(this.el.totalUnits.value) || 23;
+        const planDays = this.currentPlan.dailyUnits.length;
+        
+        this.el.planNameDisplay.textContent = planName;
+        this.el.planTitle.textContent = planName;
+        this.el.statTotal.textContent = totalUnits;
+        this.el.planDaysDisplay.textContent = planDays;
+        this.el.statProgressDesc.textContent = `0/${totalUnits}`;
+        
+        this.currentPlan.name = planName;
+        this.currentPlan.totalUnits = totalUnits;
+        this.currentPlan.startDate = this.el.startDate.value;
+      }
+
+      // 生成学习计划（超30天）
+      generatePlan() {
+        const planDays = this.currentPlan.dailyUnits.length;
+        const startDate = new Date(this.currentPlan.startDate);
+        const unitNaming = this.currentPlan.unitNaming;
+        const totalUnits = this.currentPlan.totalUnits;
+        
+        // 处理自定义单元名（仅需填写新学单元）
+        let unitList = [];
+        if (unitNaming === 'custom') {
+          unitList = this.el.customUnitNames.value.trim().split('\n')
+            .map(name => name.trim())
+            .filter(Boolean);
+          
+          // 验证单元名数量（只需≥总学习量）
+          if (unitList.length < totalUnits) {
+            alert(`自定义单元名需至少填写${totalUnits}个（与学习总量一致）`);
+            return;
+          }
+          // 截取前totalUnits个作为新学单元
+          unitList = unitList.slice(0, totalUnits);
+        } else {
+          // 按顺序命名
+          unitList = Array.from({ length: totalUnits }, (_, i) => (i + 1).toString());
+        }
+
+        // 分配每日新学单元
+        this.currentPlan.planData = [];
+        let currentUnitIdx = 0;
+
+        for (let day = 1; day <= planDays; day++) {
+          const dayUnits = this.currentPlan.dailyUnits[day - 1] || 1;
+          // 新学单元（超出总学习量后不再分配新单元）
+          const newUnits = currentUnitIdx < totalUnits
+            ? unitList.slice(currentUnitIdx, currentUnitIdx + dayUnits)
+            : [];
+          
+          currentUnitIdx += dayUnits;
+
+          this.currentPlan.planData.push({
+            date: this.addDays(startDate, day - 1),
+            dayNum: day,
+            newUnits: [...newUnits],
+            reviewUnits: [],
+            id: `day-${day}`
+          });
+        }
+
+        // 分配复习单元（艾宾浩斯曲线，复用新学单元名）
+        this.currentPlan.planData.forEach((currentDay, currentIdx) => {
+          this.currentPlan.planData.forEach((prevDay, prevIdx) => {
+            const daysBetween = currentIdx - prevIdx;
+            if (daysBetween > 0 && EBBINGHAUS_INTERVALS.includes(daysBetween)) {
+              currentDay.reviewUnits.push(...prevDay.newUnits);
+            }
+          });
+        });
+
+        // 渲染日历
+        this.renderCalendar();
+        this.updateProgress();
+      }
+
+      // 渲染日历表
+      renderCalendar() {
+        this.el.calendarContainer.innerHTML = '';
+        const startDate = new Date(this.currentPlan.startDate);
+        const firstDayOfWeek = startDate.getDay();
+
+        // 填充月初空白
+        for (let i = 0; i < firstDayOfWeek; i++) {
+          const emptyDiv = document.createElement('div');
+          emptyDiv.className = 'h-40';
+          this.el.calendarContainer.appendChild(emptyDiv);
+        }
+
+        // 渲染每日卡片
+        this.currentPlan.planData.forEach(dayPlan => {
+          const dateStr = dayPlan.date.toLocaleDateString('zh-CN');
+          const dayOfMonth = dayPlan.date.getDate();
+          const isToday = this.isSameDay(dayPlan.date, new Date());
+
+          // 新学内容
+          const newUnitsHtml = dayPlan.newUnits.length > 0 
+            ? dayPlan.newUnits.map(unit => `
+                <div class="flex items-center mb-1">
+                  <input type="checkbox" class="unit-checkbox mr-2" data-unit="${unit}" ${this.currentPlan.completedUnits.has(unit) ? 'checked' : ''}>
+                  <span class="text-sm text-primary">新学习 ${unit}</span>
+                </div>
+              `).join('')
+            : '<p class="text-xs text-gray-500">今日无新学内容</p>';
+
+          // 复习内容
+          const reviewUnitsHtml = dayPlan.reviewUnits.length > 0
+            ? dayPlan.reviewUnits.map(unit => `
+                <div class="flex items-center mb-1">
+                  <input type="checkbox" class="unit-checkbox mr-2" data-unit="${unit}" ${this.currentPlan.completedUnits.has(unit) ? 'checked' : ''}>
+                  <span class="text-sm text-warning">复习 ${unit}</span>
+                </div>
+              `).join('')
+            : '<p class="text-xs text-gray-500">今日无复习内容</p>';
+
+          // 每日卡片
+          const dayCard = document.createElement('div');
+          dayCard.className = `bg-white rounded-lg p-3 card-shadow day-card ${isToday ? 'border-2 border-primary' : ''}`;
+          dayCard.innerHTML = `
+            <div class="text-center mb-2">
+              <p class="text-sm font-medium">${dateStr}</p>
+              <p class="text-sm font-bold text-primary">Day ${dayPlan.dayNum}</p>
+            </div>
+            <div class="space-y-2">
+              ${newUnitsHtml}
+              ${reviewUnitsHtml}
+            </div>
+          `;
+          this.el.calendarContainer.appendChild(dayCard);
+        });
+
+        // 绑定复选框事件
+        document.querySelectorAll('.unit-checkbox').forEach(checkbox => {
+          checkbox.addEventListener('change', (e) => {
+            const unit = e.target.dataset.unit;
+            if (e.target.checked) {
+              this.currentPlan.completedUnits.add(unit);
+            } else {
+              this.currentPlan.completedUnits.delete(unit);
+            }
+            this.updateProgress();
+            this.saveCurrentPlan(); // 自动保存完成状态
+          });
+        });
+      }
+
+      // 更新进度统计
+      updateProgress() {
+        const total = this.currentPlan.totalUnits;
+        const completed = this.currentPlan.completedUnits.size;
+        const progress = Math.round((completed / total) * 100);
+        
+        this.el.statProgress.textContent = `${progress}%`;
+        this.el.statProgressDesc.textContent = `${completed}/${total}`;
+        this.el.progressFill.style.width = `${progress}%`;
+        this.el.progressPercent.textContent = `${progress}%`;
+        this.el.statStreak.textContent = this.calculateStreak();
+      }
+
+      // 计算连续打卡
+      calculateStreak() {
+        if (this.currentPlan.completedUnits.size === 0) return 0;
+        // 简化计算：连续完成的单元数（实际可根据每日完成情况优化）
+        return Math.min(this.currentPlan.completedUnits.size, 7);
+      }
+
+      // 保存当前计划
+      saveCurrentPlan() {
+        const planId = this.currentPlanId || `plan-${Date.now()}`;
+        this.currentPlanId = planId;
+        
+        // 保存当前配置
+        this.currentPlan.customUnitNames = this.el.customUnitNames.value;
+        
+        // 存储到所有计划
+        this.allPlans[planId] = {
+          ...this.currentPlan,
+          completedUnits: Array.from(this.currentPlan.completedUnits)
+        };
+        this.saveAllPlans();
+        this.updatePlanSelector();
+        alert('计划已保存');
+      }
+
+      // 加载选中的计划
+      loadSelectedPlan(planId) {
+        if (planId === 'new') {
+          this.currentPlanId = null;
+          this.currentPlan = {
+            name: "新学习计划",
+            totalUnits: 23,
+            startDate: "2026-07-06",
+            unitNaming: "number",
+            customUnitNames: "",
+            dailyUnits: Array(40).fill(2),
+            planData: [],
+            completedUnits: new Set()
+          };
+          this.initDefaultDailyUnits(40);
+          this.el.planName.value = "新学习计划";
+          this.el.startDate.value = "2026-07-06";
+          this.el.unitNaming.value = "number";
+          this.el.customUnitNames.value = "";
+          this.el.calendarContainer.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500">点击"生成超长周期学习+复习计划"按钮创建计划</div>';
+          this.updatePlanInfo();
+          return;
+        }
+
+        const plan = this.allPlans[planId];
+        if (!plan) return;
+
+        this.currentPlanId = planId;
+        this.currentPlan = {
+          ...plan,
+          completedUnits: new Set(plan.completedUnits)
+        };
+
+        // 更新表单
+        this.el.planName.value = plan.name;
+        this.el.totalUnits.value = plan.totalUnits;
+        this.el.startDate.value = plan.startDate;
+        this.el.unitNaming.value = plan.unitNaming;
+        this.el.customUnitNames.value = plan.customUnitNames || "";
+        
+        // 更新每日学习量
+        this.el.dailyUnitsContainer.innerHTML = '';
+        plan.dailyUnits.forEach((val, idx) => {
+          this.addDayItem(idx + 1, val);
+        });
+        
+        this.toggleCustomUnitArea();
+        this.updatePlanInfo();
+        this.renderCalendar();
+        this.updateProgress();
+      }
+
+      // 删除当前计划
+      deleteCurrentPlan() {
+        if (!this.currentPlanId || !confirm('确定删除当前计划吗？')) return;
+        delete this.allPlans[this.currentPlanId];
+        this.saveAllPlans();
+        this.updatePlanSelector();
+        this.loadSelectedPlan('new');
+      }
+
+      // 更新计划选择器
+      updatePlanSelector() {
+        this.el.planSelector.innerHTML = '<option value="new">新建计划</option>';
+        Object.entries(this.allPlans).forEach(([id, plan]) => {
+          const option = document.createElement('option');
+          option.value = id;
+          option.textContent = plan.name;
+          if (id === this.currentPlanId) option.selected = true;
+          this.el.planSelector.appendChild(option);
+        });
+      }
+
+      // 重置当前计划
+      resetCurrentPlan() {
+        if (!confirm('确定重置当前计划吗？')) return;
+        this.currentPlan.planData = [];
+        this.currentPlan.completedUnits = new Set();
+        this.el.calendarContainer.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500">点击"生成超长周期学习+复习计划"按钮创建计划</div>';
+        this.updateProgress();
+      }
+
+      // 导出CSV
+      exportCSV() {
+        if (this.currentPlan.planData.length === 0) {
+          alert('请先生成计划');
+          return;
+        }
+
+        const headers = ['日期', 'Day', '新学习内容', '复习内容', '完成状态'];
+        const rows = [headers];
+
+        this.currentPlan.planData.forEach(dayPlan => {
+          const dateStr = dayPlan.date.toLocaleDateString('zh-CN');
+          const newUnits = dayPlan.newUnits.join('、');
+          const reviewUnits = dayPlan.reviewUnits.join('、');
+          const completed = dayPlan.newUnits.every(u => this.currentPlan.completedUnits.has(u)) ? '已完成' : '未完成';
+          rows.push([dateStr, `Day ${dayPlan.dayNum}`, newUnits, reviewUnits, completed]);
+        });
+
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, this.currentPlan.name);
+        XLSX.writeFile(wb, `${this.currentPlan.name}.csv`);
+      }
+
+      // 导出PDF
+      exportPDF() {
+        if (this.currentPlan.planData.length === 0) {
+          alert('请先生成计划');
+          return;
+        }
+        window.print();
+      }
+
+      // 导出日历（生成ICS文件）
+      exportCalendar() {
+        if (this.currentPlan.planData.length === 0) {
+          alert('请先生成计划');
+          return;
+        }
+
+        // 生成ICS格式内容
+        const icsContent = [
+          'BEGIN:VCALENDAR',
+          'VERSION:2.0',
+          `PRODID:-//${this.currentPlan.name}//`,
+          'CALSCALE:GREGORIAN'
+        ];
+
+        this.currentPlan.planData.forEach(dayPlan => {
+          const date = dayPlan.date;
+          const dateStr = date.toISOString().split('T')[0].replace(/-/g, '');
+          const newUnits = dayPlan.newUnits.join('、');
+          const reviewUnits = dayPlan.reviewUnits.join('、');
+          const title = `${this.currentPlan.name} Day ${dayPlan.dayNum}`;
+          const description = [
+            `新学习：${newUnits || '无'}`,
+            `复习：${reviewUnits || '无'}`
+          ].join('\\n');
+
+          icsContent.push(
+            'BEGIN:VEVENT',
+            `UID:${dayPlan.id}@ebbinghaus-plan`,
+            `DTSTART;VALUE=DATE:${dateStr}`,
+            `DTEND;VALUE=DATE:${dateStr}`,
+            `SUMMARY:${title}`,
+            `DESCRIPTION:${description}`,
+            'END:VEVENT'
+          );
+        });
+
+        icsContent.push('END:VCALENDAR');
+
+        // 下载ICS文件
+        const blob = new Blob([icsContent.join('\n')], { type: 'text/calendar;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${this.currentPlan.name}.ics`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        alert('日历文件已生成，可导入到系统日历/Google日历等应用');
+      }
+
+      // 工具函数：日期加天数
+      addDays(date, days) {
+        const result = new Date(date);
+        result.setDate(result.getDate() + days);
+        return result;
+      }
+
+      // 工具函数：判断同一天
+      isSameDay(date1, date2) {
+        return date1.getFullYear() === date2.getFullYear() &&
+               date1.getMonth() === date2.getMonth() &&
+               date1.getDate() === date2.getDate();
+      }
+    }
+
+    // 初始化应用
+    document.addEventListener('DOMContentLoaded', () => {
+      new MultiPlanEbbinghaus();
+    });
+  </script>
+</body>
+</html>
